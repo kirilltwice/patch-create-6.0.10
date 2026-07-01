@@ -1,0 +1,62 @@
+name: Auto Release
+
+# Publishes a downloadable GitHub Release containing the Create 6.0.10 axis-null
+# patch files. Runs automatically on every push to main, and can also be
+# triggered manually or by pushing a version tag (e.g. v6.0.10-fix1).
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Determine release tag
+        id: meta
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            TAG="${{ github.ref_name }}"
+          else
+            TAG="v6.0.10-fix.${{ github.run_number }}"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Release tag: $TAG"
+
+      - name: Package patch files
+        run: |
+          mkdir -p dist
+          zip -j "dist/create-6.0.10-axis-null-fix.zip" \
+            README.md \
+            reset_method_fix.asm
+          ls -la dist
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: Create 6.0.10 Axis Null Fix (${{ steps.meta.outputs.tag }})
+          body: |
+            Automated release of the Create 6.0.10 axis-null crash fix.
+
+            **Downloads**
+            - `create-6.0.10-axis-null-fix.zip` — README + Recaf bytecode patch (`reset_method_fix.asm`)
+            - `reset_method_fix.asm` — apply directly with the Recaf 4.x assembler
+
+            See the README for step-by-step instructions.
+          files: |
+            dist/create-6.0.10-axis-null-fix.zip
+            reset_method_fix.asm
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
