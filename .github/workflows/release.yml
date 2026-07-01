@@ -1,8 +1,12 @@
 name: Auto Release
 
-# Publishes a downloadable GitHub Release containing the Create 6.0.10 axis-null
-# patch files. Runs automatically on every push to main, and can also be
+# Builds the Create 6.0.10 axis-null patcher and publishes a downloadable
+# GitHub Release. Runs automatically on every push to main, and can also be
 # triggered manually or by pushing a version tag (e.g. v6.0.10-fix1).
+#
+# NOTE: create-1.21.1-6.0.10.jar itself is Create's copyrighted mod and is NOT
+# redistributed here. Instead we ship create-patcher.jar, which patches the
+# user's own copy of the jar locally.
 
 on:
   push:
@@ -15,12 +19,21 @@ on:
 permissions:
   contents: write
 
+env:
+  ASM_VERSION: "9.7"
+
 jobs:
   release:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
 
       - name: Determine release tag
         id: meta
@@ -33,12 +46,42 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "Release tag: $TAG"
 
-      - name: Package patch files
+      - name: Build create-patcher.jar
         run: |
-          mkdir -p dist
+          set -euxo pipefail
+          mkdir -p dist build/classes lib
+
+          # Fetch ASM (bytecode library) from Maven Central.
+          base="https://repo1.maven.org/maven2/org/ow2/asm"
+          curl -sSL -o lib/asm.jar      "$base/asm/${ASM_VERSION}/asm-${ASM_VERSION}.jar"
+          curl -sSL -o lib/asm-tree.jar "$base/asm-tree/${ASM_VERSION}/asm-tree-${ASM_VERSION}.jar"
+
+          # Compile the patcher.
+          javac -cp "lib/asm.jar:lib/asm-tree.jar" -d build/classes patcher/Patcher.java
+
+          # Bundle ASM into a runnable fat jar.
+          (cd build/classes && jar xf ../../lib/asm.jar && jar xf ../../lib/asm-tree.jar \
+            && rm -rf META-INF module-info.class)
+          jar --create --file dist/create-patcher.jar --main-class Patcher -C build/classes .
+
+          echo "Built:" && ls -la dist/create-patcher.jar
+
+      - name: Smoke-test the patcher (usage output)
+        run: |
+          set -e
+          # No args -> prints usage and exits non-zero; assert that behaviour.
+          if java -jar dist/create-patcher.jar; then
+            echo "Expected non-zero exit with no args" && exit 1
+          fi
+          echo "Patcher smoke test OK"
+
+      - name: Package documentation + raw patch
+        run: |
+          set -e
           zip -j "dist/create-6.0.10-axis-null-fix.zip" \
             README.md \
-            reset_method_fix.asm
+            reset_method_fix.asm \
+            dist/create-patcher.jar
           ls -la dist
 
       - name: Publish release
@@ -49,12 +92,21 @@ jobs:
           body: |
             Automated release of the Create 6.0.10 axis-null crash fix.
 
-            **Downloads**
-            - `create-6.0.10-axis-null-fix.zip` — README + Recaf bytecode patch (`reset_method_fix.asm`)
-            - `reset_method_fix.asm` — apply directly with the Recaf 4.x assembler
+            ## Downloads
+            - **`create-patcher.jar`** — run it against your own Create jar to produce a fixed copy:
+              ```
+              java -jar create-patcher.jar create-1.21.1-6.0.10.jar
+              ```
+              This writes `create-1.21.1-6.0.10-fixed.jar` next to it. Requires Java 17+.
+            - `create-6.0.10-axis-null-fix.zip` — README + Recaf patch + the patcher jar
+            - `reset_method_fix.asm` — the raw bytecode patch for the Recaf 4.x assembler
 
-            See the README for step-by-step instructions.
+            The original `create-1.21.1-6.0.10.jar` is Create's copyrighted mod and is
+            **not** included — the patcher modifies your own copy locally.
+
+            See the README for details on the bug and the fix.
           files: |
+            dist/create-patcher.jar
             dist/create-6.0.10-axis-null-fix.zip
             reset_method_fix.asm
           fail_on_unmatched_files: true

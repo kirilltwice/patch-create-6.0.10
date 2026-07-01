@@ -44,6 +44,22 @@ public void reset() {
 
 This matches the behavior of the old `SeparationManifold` base class which initialized `axis = Vec3.ZERO`, preventing the NPE.
 
+## How to Apply the Fix — Easy Way (patcher jar)
+
+Each release ships a ready-to-run **`create-patcher.jar`** on the
+[Releases page](../../releases). It patches your own copy of the jar for you —
+no Recaf, no manual bytecode editing:
+
+```
+java -jar create-patcher.jar create-1.21.1-6.0.10.jar
+```
+
+This writes `create-1.21.1-6.0.10-fixed.jar` next to the original. Drop that
+into your `mods` folder. Requires Java 17+.
+
+> The original `create-1.21.1-6.0.10.jar` is Create's copyrighted mod and is
+> **not** distributed here — the patcher only modifies the copy you already own.
+
 ## How to Apply the Fix Manually
 
 ### Requirements
